@@ -37,18 +37,6 @@ const clerkWebhooks = async (req: Request, res: Response) => {
                     where: { id: data.id },
                 }); 
                 break;
-            // case "paymentAttempt.created":
-            //     console.log("Payment attempt created:", data);
-            //     await prisma.paymentAttempt.create({
-            //         data: {
-            //             id: data.id,
-            //             userId: data.user_id,
-            //             status: data.status,
-            //             amount: data.amount,
-            //             currency: data.currency,
-            //         },
-            //     });
-            //     break;  
             case "paymentAttempt.updated":
                 console.log("Payment attempt updated:", JSON.stringify(data, null, 2));
 
@@ -103,12 +91,20 @@ const clerkWebhooks = async (req: Request, res: Response) => {
                     console.log("Unknown plan:", rawPlan);
                     return res.status(200).json({ message: "Ignored" });
                 }
-                const user = await prisma.user.findUnique({
+                let user = await prisma.user.findUnique({
                     where: { id: clerkUserId }
                 });
                 if (!user) {
-                    console.log("User not found:", clerkUserId);
-                    return res.status(200).json({ message: "User not found" });
+                    console.log("User not found, creating:", clerkUserId);
+
+                    user = await prisma.user.create({
+                        data: {
+                            id: clerkUserId || '123',
+                            email: data.payer?.email || "",
+                            name: `${data.payer?.first_name || ""} ${data.payer?.last_name || ""}`.trim(),
+                            image: data.payer?.image_url || "",
+                        },
+                    });
                 }
                 const planKey = rawPlan as Plan;
                 await prisma.user.update({
