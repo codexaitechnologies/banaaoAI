@@ -37,84 +37,57 @@ const clerkWebhooks = async (req: Request, res: Response) => {
                     where: { id: data.id },
                 }); 
                 break;
-            case "paymentAttempt.updated":
-                console.log("Payment attempt updated:", JSON.stringify(data, null, 2));
+            case "subscription.created":
+            case "subscription.updated":
+                console.log("Payment attempt updated:", data);
+                const clerkUserId = data.payer?.user_id;
+                const activeItem = data.items?.find(
+                    (item: any) => item.status === "active"
+                );
+                const rawPlan = activeItem?.plan?.slug;
 
-                if (
-                (data.charge_type === 'checkout' || data.charge_type === 'recurring') &&
-                data.status === 'paid'
-                ) {
-                    const clerkUserId = data.payer?.user_id;
+                type Plan = "pro" | "premium" | "ultra_pro";
 
-                    const rawPlan = (data.subscription_items?.[0] as any)?.plan?.slug;
+                const credits: Record<Plan, number> = {
+                    pro: 80,
+                    premium: 240,
+                    ultra_pro: 500
+                };
 
-                    type Plan = "pro" | "premium";
+                if (!rawPlan || !(rawPlan in credits)) {
+                    return res.status(200).json({ message: "Ignored" });
+                }
 
-                    const credits: Record<Plan, number> = {
-                        pro: 80,
-                        premium: 240
-                    };
+                let user = await prisma.user.findUnique({
+                    where: { id: clerkUserId }
+                });
 
-                    if (!rawPlan || !(rawPlan in credits)) {
-                        console.log("Invalid plan:", rawPlan);
-                        return res.status(200).json({ message: "Ignored unknown plan" });
-                    }
-
-                    const planKey = rawPlan as Plan;
-
-                    console.log("plan:", planKey, "user:", clerkUserId);
-
-                    await prisma.user.update({
-                        where: { id: clerkUserId },
+                if (!user) {
+                    user = await prisma.user.create({
                         data: {
-                            credits: { increment: credits[planKey] },
+                            id: clerkUserId || '12345',
+                            email: data.payer?.email || "",
+                            name: "",
+                            image: "",
                         },
                     });
                 }
 
-                break;  
-            // case "subscription.created":
-            // case "subscription.updated":
-            //     console.log("Subscription event:", JSON.stringify(data, null, 2));
-            //     const clerkUserId = data.payer?.user_id;
-            //      const activeItem = data.items?.find(
-            //         (item: any) => item.status === "active"
-            //     );
-            //     const rawPlan = activeItem?.plan?.slug;
-            //     type Plan = "pro" | "premium" | "ultra_pro";
-            //     const credits: Record<Plan, number> = {
-            //         pro: 80,
-            //         premium: 240,
-            //         ultra_pro: 500
-            //     };
-            //     if (!rawPlan || !(rawPlan in credits)) {
-            //         console.log("Unknown plan:", rawPlan);
-            //         return res.status(200).json({ message: "Ignored" });
-            //     }
-            //     let user = await prisma.user.findUnique({
-            //         where: { id: clerkUserId }
-            //     });
-            //     if (!user) {
-            //         console.log("User not found, creating:", clerkUserId);
+                // ✅ prevent duplicate credits
+                if (user.lastSubscriptionId === data.id) {
+                    return res.status(200).json({ message: "Already processed" });
+                }
 
-            //         user = await prisma.user.create({
-            //             data: {
-            //                 id: clerkUserId || '123',
-            //                 email: data.payer?.email || "",
-            //                 name: `${data.payer?.first_name || ""} ${data.payer?.last_name || ""}`.trim(),
-            //                 image: data.payer?.image_url || "",
-            //             },
-            //         });
-            //     }
-            //     const planKey = rawPlan as Plan;
-            //     await prisma.user.update({
-            //         where: { id: clerkUserId },
-            //         data: {
-            //             credits: { increment: credits[planKey] },
-            //         },
-            //     });
-            //     console.log("Credits updated for:", clerkUserId);
-            //     break; 
+                const planKey = rawPlan as Plan;
+
+                await prisma.user.update({
+                    where: { id: clerkUserId },
+                    data: {
+                        credits: { increment: credits[planKey] },
+                        lastSubscriptionId: data.id
+                    },
+                });
+                break; 
             default:
                 console.log(`Unhandled event type: ${type}`);
         }
