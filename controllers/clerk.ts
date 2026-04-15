@@ -50,22 +50,40 @@ const clerkWebhooks = async (req: Request, res: Response) => {
             //     });
             //     break;  
             case "paymentAttempt.updated":
-                console.log("Payment attempt updated:", data);
-                if(data.charge_type==='checkout' || data.charge_type==='recurring' && data.status==='paid'){
-                    const credits = { pro: 80, premium: 240}
-                    const clerkUserId = data?.payer.user_id;
-                    const planId = data?.subscription_items[0]?.plan?.slug;
-                    if(planId !== 'pro' && planId !== 'premium'){
-                        return res.status(400).json({ message: "Invalid plan ID" });
+                console.log("Payment attempt updated:", JSON.stringify(data, null, 2));
+
+                if (
+                (data.charge_type === 'checkout' || data.charge_type === 'recurring') &&
+                data.status === 'paid'
+                ) {
+                    const clerkUserId = data.payer?.user_id;
+
+                    const rawPlan = (data.subscription_items?.[0] as any)?.plan?.slug;
+
+                    type Plan = "pro" | "premium";
+
+                    const credits: Record<Plan, number> = {
+                        pro: 80,
+                        premium: 240
+                    };
+
+                    if (!rawPlan || !(rawPlan in credits)) {
+                        console.log("Invalid plan:", rawPlan);
+                        return res.status(200).json({ message: "Ignored unknown plan" });
                     }
-                    console.log("planId:", planId, "clerkUserId:", clerkUserId);
+
+                    const planKey = rawPlan as Plan;
+
+                    console.log("plan:", planKey, "user:", clerkUserId);
+
                     await prisma.user.update({
                         where: { id: clerkUserId },
                         data: {
-                            credits: { increment: credits[planId] },
+                            credits: { increment: credits[planKey] },
                         },
                     });
                 }
+
                 break;  
             case "subscription.created":
             case "subscription.updated":
