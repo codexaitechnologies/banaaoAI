@@ -40,6 +40,19 @@ const clerkWebhooks = async (req: Request, res: Response) => {
             case "subscription.created":
             case "subscription.updated":
                 console.log("Payment attempt updated:", data);
+                if (data.status !== "active") {
+                    return res.status(200).json({ message: "Not active" });
+                }
+
+                if (!data.active_at) {
+                    return res.status(200).json({ message: "No activation time" });
+                }
+                const now = Date.now();
+
+                // ✅ prevent duplicate credits
+                if (now - data.active_at > 10000) {
+                    return res.status(200).json({ message: "Duplicate event ignored" });
+                }
                 const clerkUserId = data.payer?.user_id;
                 const activeItem = data.items?.find(
                     (item: any) => item.status === "active"
@@ -73,18 +86,12 @@ const clerkWebhooks = async (req: Request, res: Response) => {
                     });
                 }
 
-                // ✅ prevent duplicate credits
-                if (user.lastSubscriptionId === data.id) {
-                    return res.status(200).json({ message: "Already processed" });
-                }
-
                 const planKey = rawPlan as Plan;
 
                 await prisma.user.update({
                     where: { id: clerkUserId },
                     data: {
-                        credits: { increment: credits[planKey] },
-                        lastSubscriptionId: data.id
+                        credits: { increment: credits[planKey] }
                     },
                 });
                 break; 
