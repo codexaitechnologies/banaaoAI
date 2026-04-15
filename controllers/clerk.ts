@@ -88,27 +88,36 @@ const clerkWebhooks = async (req: Request, res: Response) => {
             case "subscription.created":
             case "subscription.updated":
                 console.log("Subscription event:", JSON.stringify(data, null, 2));
-                const clerkUserId = data.payer_id;
-                type Plan = "pro" | "premium";
-                const rawPlan = (data.items?.[0] as any)?.plan?.slug;
+                const clerkUserId = data.payer?.user_id;
+                 const activeItem = data.items?.find(
+                    (item: any) => item.status === "active"
+                );
+                const rawPlan = activeItem?.plan?.slug;
+                type Plan = "pro" | "premium" | "ultra_pro";
                 const credits: Record<Plan, number> = {
-                pro: 80,
-                premium: 240
+                    pro: 80,
+                    premium: 240,
+                    ultra_pro: 500
                 };
-
-                if (rawPlan !== "pro" && rawPlan !== "premium") {
-                console.log("Unknown plan:", rawPlan);
-                return res.status(200).json({ message: "Ignored" });
+                if (!rawPlan || !(rawPlan in credits)) {
+                    console.log("Unknown plan:", rawPlan);
+                    return res.status(200).json({ message: "Ignored" });
                 }
-
-                const planKey: Plan = rawPlan;
-
-                await prisma.user.update({
-                where: { id: clerkUserId },
-                data: {
-                    credits: { increment: credits[planKey] },
-                },
+                const user = await prisma.user.findUnique({
+                    where: { id: clerkUserId }
                 });
+                if (!user) {
+                    console.log("User not found:", clerkUserId);
+                    return res.status(200).json({ message: "User not found" });
+                }
+                const planKey = rawPlan as Plan;
+                await prisma.user.update({
+                    where: { id: clerkUserId },
+                    data: {
+                        credits: { increment: credits[planKey] },
+                    },
+                });
+                console.log("Credits updated for:", clerkUserId);
                 break; 
             default:
                 console.log(`Unhandled event type: ${type}`);
