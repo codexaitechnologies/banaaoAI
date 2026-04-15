@@ -69,20 +69,28 @@ const clerkWebhooks = async (req: Request, res: Response) => {
                 break;  
             case "subscription.created":
             case "subscription.updated":
-                console.log("Payment attempt updated:", data);
-                const credits = { pro: 80, premium: 240}
-                    const clerkUserId = data?.payer.user_id;
-                    const planId = data.id;
-                    if(planId !== 'pro' && planId !== 'premium'){
-                        return res.status(400).json({ message: "Invalid plan ID" });
-                    }
-                    console.log("planId:", planId, "clerkUserId:", clerkUserId);
-                    await prisma.user.update({
-                        where: { id: clerkUserId },
-                        data: {
-                            credits: { increment: credits[planId] },
-                        },
-                    });
+                console.log("Subscription event:", JSON.stringify(data, null, 2));
+                const clerkUserId = data.payer_id;
+                type Plan = "pro" | "premium";
+                const rawPlan = (data.items?.[0] as any)?.plan?.slug;
+                const credits: Record<Plan, number> = {
+                pro: 80,
+                premium: 240
+                };
+
+                if (rawPlan !== "pro" && rawPlan !== "premium") {
+                console.log("Unknown plan:", rawPlan);
+                return res.status(200).json({ message: "Ignored" });
+                }
+
+                const planKey: Plan = rawPlan;
+
+                await prisma.user.update({
+                where: { id: clerkUserId },
+                data: {
+                    credits: { increment: credits[planKey] },
+                },
+                });
                 break; 
             default:
                 console.log(`Unhandled event type: ${type}`);
